@@ -82,6 +82,12 @@ class TaskRepository:
             row = con.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
         return dict(row) if row else None
 
+    def list_tasks(self) -> list[dict]:
+        """Return all tasks, newest first, for the built-in local test console."""
+        with self._connection() as con:
+            rows = con.execute("SELECT * FROM tasks ORDER BY created_at DESC, id DESC").fetchall()
+        return [dict(row) for row in rows]
+
     def claim_next(self, worker_id: str) -> dict | None:
         now = utcnow()
         with self._connection() as con:

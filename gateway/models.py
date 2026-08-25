@@ -23,6 +23,7 @@ class ChatRequest(BaseModel):
 class TaskResponse(BaseModel):
     task_id: str
     session_id: str
+    prompt: str
     status: TaskStatus
     answer: str | None = None
     error_code: str | None = None

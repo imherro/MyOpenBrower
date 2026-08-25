@@ -14,7 +14,20 @@ def test_create_and_fetch_task(tmp_path):
         fetched = client.get(f"/api/tasks/{payload['task_id']}")
         assert fetched.status_code == 200
         assert fetched.json()["session_id"] == "general"
+        assert fetched.json()["prompt"] == "hello"
         assert fetched.json()["answer"] is None
+        listed = client.get("/api/tasks")
+        assert listed.status_code == 200
+        assert [task["task_id"] for task in listed.json()] == [payload["task_id"]]
+
+
+def test_test_console_is_served(tmp_path):
+    app = create_app(Settings(db_path=tmp_path / "gateway.db", worker_enabled=False))
+    with TestClient(app) as client:
+        response = client.get("/")
+    assert response.status_code == 200
+    assert "测试控制台" in response.text
+    assert "/api/tasks" in response.text
 
 
 def test_invalid_session_is_rejected(tmp_path):
