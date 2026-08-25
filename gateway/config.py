@@ -16,7 +16,7 @@ def _as_bool(value: str | None, default: bool) -> bool:
 @dataclass(frozen=True)
 class Settings:
     host: str = "0.0.0.0"
-    port: int = 9900
+    port: int = 9901
     db_path: Path = Path("data/chatgpt_gateway.db")
     worker_enabled: bool = True
     poll_interval_seconds: float = 0.5
@@ -37,7 +37,7 @@ class Settings:
         load_dotenv(override=False)
         return cls(
             host=os.getenv("GATEWAY_HOST", "0.0.0.0"),
-            port=int(os.getenv("GATEWAY_PORT", "9900")),
+            port=int(os.getenv("GATEWAY_PORT", "9901")),
             db_path=Path(os.getenv("GATEWAY_DB_PATH", "data/chatgpt_gateway.db")),
             worker_enabled=_as_bool(os.getenv("GATEWAY_WORKER_ENABLED"), True),
             poll_interval_seconds=float(os.getenv("GATEWAY_POLL_INTERVAL_SECONDS", "0.5")),

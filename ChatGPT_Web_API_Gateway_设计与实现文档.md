@@ -104,19 +104,19 @@
 
 Gateway 默认运行在：
 
-    0.0.0.0:9900
+    0.0.0.0:9901
 
 即监听本机全部网络接口，便于局域网内的业务程序调用。启动命令：
 
 ``` powershell
-python -m uvicorn gateway.main:app --host 0.0.0.0 --port 9900
+python -m uvicorn gateway.main:app --host 0.0.0.0 --port 9901
 ```
 
 可通过环境变量覆盖，但默认值必须保持：
 
 ``` text
 GATEWAY_HOST=0.0.0.0
-GATEWAY_PORT=9900
+GATEWAY_PORT=9901
 ```
 
 由于服务会暴露 ChatGPT 账号能力，部署到局域网或公网时必须额外配置认证、访问控制和防火墙；不应直接裸露在公网。
@@ -215,7 +215,7 @@ Gateway 内置测试页面：
 
 默认地址：
 
-    http://127.0.0.1:9900/
+    http://127.0.0.1:9901/
 
 页面功能：
 
@@ -554,11 +554,11 @@ Memory 条目按 Session 保存。Worker 执行任务时将它们组合为背景
 ``` powershell
 Copy-Item .env.example .env
 python -m gateway.browser_login --profile default
-python -m uvicorn gateway.main:app --host 0.0.0.0 --port 9900
+python -m uvicorn gateway.main:app --host 0.0.0.0 --port 9901
 ```
 
 浏览器访问：
 
-    http://127.0.0.1:9900/
+    http://127.0.0.1:9901/
 
 测试控制台显示全部任务的问题、答案、状态、错误、重试次数与时间，并每两秒刷新一次。
