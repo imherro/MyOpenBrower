@@ -490,3 +490,74 @@ class ChatProvider:
 -   重试机制；
 -   日志；
 -   异常恢复。
+
+------------------------------------------------------------------------
+
+# 15. 当前实现与运行说明
+
+## 15.1 Provider 实现
+
+当前默认 `openbrowser` Provider 由 Playwright 驱动独立的 Chrome 持久化 Profile 实现：
+
+    Gateway Worker
+       ↓
+    OpenBrowserProvider（Provider 抽象层）
+       ↓
+    Playwright / Chrome Persistent Context
+       ↓
+    ChatGPT Web
+
+每个 Gateway Session 保存 `profile_name` 和 `conversation_url`：
+
+-   `profile_name` 决定 Cookie 和登录状态保存位置：`profiles/<profile_name>`；
+-   `conversation_url` 指向长期 ChatGPT 对话；若为空，首次提问后自动保存浏览器当前对话地址；
+-   多 Session 可复用同一 Profile，也可配置不同 Profile 实现账号隔离。
+
+首次使用某个 Profile 需要人工登录：
+
+``` powershell
+python -m gateway.browser_login --profile default
+```
+
+该命令只使用 Gateway 自己的 Profile，不读取或修改日常 Chrome 用户资料。
+
+## 15.2 API 与控制能力
+
+除创建、查询任务外，当前实现提供：
+
+``` text
+GET    /api/tasks
+POST   /api/tasks/{task_id}/cancel
+POST   /api/tasks/{task_id}/retry
+GET    /api/sessions
+POST   /api/sessions
+PATCH  /api/sessions/{session_id}
+GET    /api/sessions/{session_id}/memory
+POST   /api/sessions/{session_id}/memory
+DELETE /api/sessions/{session_id}/memory/{memory_id}
+```
+
+Memory 条目按 Session 保存。Worker 执行任务时将它们组合为背景上下文并注入本次提问，使多个业务项目可保有独立偏好与长期信息。
+
+任务取消仅适用于尚未被浏览器领取的 `pending` / `retry_wait` 任务；浏览器生成中的任务不会被强制中断，避免 ChatGPT 页面状态与数据库状态失去一致性。
+
+## 15.3 安全与运维
+
+-   设置 `GATEWAY_API_KEY` 后，所有 `/api/*` 接口要求 `X-API-Key`；测试页面会在浏览器本地存储该 Key 后调用接口。
+-   运行日志写入 `logs/gateway.log`，单文件上限 5 MB，保留 5 个轮转备份。
+-   数据库采用 SQLite WAL 与原子任务领取；Worker 启动时会恢复心跳超时的 `running` 任务。
+-   Provider 将登录失效标记为 `AUTH_REQUIRED`；页面与生成超时会按照退避策略重试。
+
+## 15.4 启动与验收
+
+``` powershell
+Copy-Item .env.example .env
+python -m gateway.browser_login --profile default
+python -m uvicorn gateway.main:app --host 0.0.0.0 --port 9900
+```
+
+浏览器访问：
+
+    http://127.0.0.1:9900/
+
+测试控制台显示全部任务的问题、答案、状态、错误、重试次数与时间，并每两秒刷新一次。
