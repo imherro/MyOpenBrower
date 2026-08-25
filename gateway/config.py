@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 import os
 
+from dotenv import load_dotenv
+
 
 def _as_bool(value: str | None, default: bool) -> bool:
     if value is None:
@@ -31,6 +33,7 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
+        load_dotenv(override=False)
         return cls(
             host=os.getenv("GATEWAY_HOST", "0.0.0.0"),
             port=int(os.getenv("GATEWAY_PORT", "9900")),

@@ -62,6 +62,14 @@ def test_cancel_and_retry_task(tmp_path):
         assert retried.json()["status"] == "pending"
 
 
+def test_settings_reads_environment(monkeypatch):
+    monkeypatch.setenv("GATEWAY_HOST", "127.0.0.1")
+    monkeypatch.setenv("GATEWAY_PORT", "12345")
+    settings = Settings.from_env()
+    assert settings.host == "127.0.0.1"
+    assert settings.port == 12345
+
+
 def test_invalid_session_is_rejected(tmp_path):
     app = create_app(Settings(db_path=tmp_path / "gateway.db", worker_enabled=False))
     with TestClient(app) as client:
