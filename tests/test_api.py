@@ -30,6 +30,26 @@ def test_test_console_is_served(tmp_path):
     assert "/api/tasks" in response.text
 
 
+def test_session_and_memory_api(tmp_path):
+    app = create_app(Settings(db_path=tmp_path / "gateway.db", worker_enabled=False))
+    with TestClient(app) as client:
+        created = client.post("/api/sessions", json={"session_id": "investing", "profile_name": "finance"})
+        assert created.status_code == 201
+        assert created.json()["profile_name"] == "finance"
+        memory = client.post("/api/sessions/investing/memory", json={"content": "风险偏好保守"})
+        assert memory.status_code == 201
+        assert client.get("/api/sessions/investing/memory").json()[0]["content"] == "风险偏好保守"
+        disabled = client.patch("/api/sessions/investing", json={"enabled": False})
+        assert disabled.json()["enabled"] is False
+
+
+def test_api_key_is_enforced_when_configured(tmp_path):
+    app = create_app(Settings(db_path=tmp_path / "gateway.db", worker_enabled=False, api_key="test-key"))
+    with TestClient(app) as client:
+        assert client.get("/api/tasks").status_code == 401
+        assert client.get("/api/tasks", headers={"X-API-Key": "test-key"}).status_code == 200
+
+
 def test_invalid_session_is_rejected(tmp_path):
     app = create_app(Settings(db_path=tmp_path / "gateway.db", worker_enabled=False))
     with TestClient(app) as client:

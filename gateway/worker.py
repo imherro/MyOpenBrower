@@ -33,11 +33,20 @@ class Worker:
     async def _execute(self, task: dict) -> None:
         heartbeat = asyncio.create_task(self._heartbeat_loop(task["task_id"]))
         try:
-            answer = await self.provider.ask(ProviderRequest(
+            session = self.repository.get_or_create_session(task["session_id"])
+            if not session["enabled"]:
+                self.repository.fail(task["task_id"], "SESSION_DISABLED", "This session is disabled.")
+                return
+            memory = self.repository.list_memory(task["session_id"])
+            memory_context = "\n".join(f"- {item['content']}" for item in memory)
+            result = await self.provider.ask(ProviderRequest(
                 task_id=task["task_id"], session_id=task["session_id"], prompt=task["prompt"],
                 timeout_seconds=task["timeout_seconds"],
+                conversation_url=session["conversation_url"], profile_name=session["profile_name"], memory_context=memory_context,
             ))
-            self.repository.complete(task["task_id"], answer)
+            self.repository.complete(task["task_id"], result.answer)
+            if result.conversation_url:
+                self.repository.update_session(task["session_id"], conversation_url=result.conversation_url, update_conversation=True)
         except ProviderError as exc:
             if exc.code == "AUTH_REQUIRED":
                 self.repository.mark_auth_required(task["task_id"], str(exc))

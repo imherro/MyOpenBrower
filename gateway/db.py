@@ -63,6 +63,15 @@ class TaskRepository:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS session_memory (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_memory_session
+                ON session_memory(session_id, id);
                 """
             )
 
@@ -76,6 +85,63 @@ class TaskRepository:
                 (task_id, session_id, prompt, timeout_seconds, now, now),
             )
         return self.get_task(task_id)  # type: ignore[return-value]
+
+    def list_sessions(self) -> list[dict]:
+        with self._connection() as con:
+            rows = con.execute("SELECT * FROM sessions ORDER BY session_id").fetchall()
+        return [dict(row) for row in rows]
+
+    def get_session(self, session_id: str) -> dict | None:
+        with self._connection() as con:
+            row = con.execute("SELECT * FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
+        return dict(row) if row else None
+
+    def create_session(self, session_id: str, conversation_url: str | None, profile_name: str) -> dict:
+        now = utcnow()
+        with self._connection() as con:
+            con.execute(
+                """INSERT INTO sessions(session_id, conversation_url, profile_name, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (session_id, conversation_url, profile_name, now, now),
+            )
+        return self.get_session(session_id)  # type: ignore[return-value]
+
+    def get_or_create_session(self, session_id: str) -> dict:
+        session = self.get_session(session_id)
+        return session if session else self.create_session(session_id, None, "default")
+
+    def update_session(self, session_id: str, conversation_url: str | None = None, profile_name: str | None = None,
+                       enabled: bool | None = None, update_conversation: bool = False) -> dict | None:
+        current = self.get_session(session_id)
+        if not current:
+            return None
+        values = (
+            conversation_url if update_conversation else current["conversation_url"],
+            profile_name if profile_name is not None else current["profile_name"],
+            int(enabled) if enabled is not None else current["enabled"],
+            utcnow(), session_id,
+        )
+        with self._connection() as con:
+            con.execute("UPDATE sessions SET conversation_url = ?, profile_name = ?, enabled = ?, updated_at = ? WHERE session_id = ?", values)
+        return self.get_session(session_id)
+
+    def list_memory(self, session_id: str) -> list[dict]:
+        with self._connection() as con:
+            rows = con.execute("SELECT * FROM session_memory WHERE session_id = ? ORDER BY id", (session_id,)).fetchall()
+        return [dict(row) for row in rows]
+
+    def add_memory(self, session_id: str, content: str) -> dict:
+        if not self.get_session(session_id):
+            raise KeyError(session_id)
+        with self._connection() as con:
+            cursor = con.execute("INSERT INTO session_memory(session_id, content, created_at) VALUES (?, ?, ?)", (session_id, content, utcnow()))
+            row = con.execute("SELECT * FROM session_memory WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        return dict(row)
+
+    def delete_memory(self, session_id: str, memory_id: int) -> bool:
+        with self._connection() as con:
+            deleted = con.execute("DELETE FROM session_memory WHERE id = ? AND session_id = ?", (memory_id, session_id))
+        return deleted.rowcount == 1
 
     def get_task(self, task_id: str) -> dict | None:
         with self._connection() as con:

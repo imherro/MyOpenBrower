@@ -22,6 +22,11 @@ class Settings:
     stale_task_seconds: int = 360
     provider: str = "openbrowser"
     openbrowser_command: str | None = None
+    chatgpt_base_url: str = "https://chatgpt.com/"
+    browser_profiles_dir: Path = Path("profiles")
+    browser_headless: bool = False
+    browser_executable: Path | None = None
+    api_key: str | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -35,4 +40,9 @@ class Settings:
             stale_task_seconds=int(os.getenv("GATEWAY_STALE_TASK_SECONDS", "360")),
             provider=os.getenv("GATEWAY_PROVIDER", "openbrowser").lower(),
             openbrowser_command=os.getenv("GATEWAY_OPENBROWSER_COMMAND") or None,
+            chatgpt_base_url=os.getenv("GATEWAY_CHATGPT_BASE_URL", "https://chatgpt.com/"),
+            browser_profiles_dir=Path(os.getenv("GATEWAY_BROWSER_PROFILES_DIR", "profiles")),
+            browser_headless=_as_bool(os.getenv("GATEWAY_BROWSER_HEADLESS"), False),
+            browser_executable=Path(os.environ["GATEWAY_BROWSER_EXECUTABLE"]) if os.getenv("GATEWAY_BROWSER_EXECUTABLE") else None,
+            api_key=os.getenv("GATEWAY_API_KEY") or None,
         )

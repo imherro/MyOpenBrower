@@ -16,6 +16,31 @@ python -m uvicorn gateway.main:app --host 0.0.0.0 --port 9900
 
 浏览器打开 `http://127.0.0.1:9900/` 可访问测试控制台：提交问题，并查看所有任务的问题、答案、状态、重试次数和时间。
 
+## 使用真实 ChatGPT 网页版
+
+默认 `openbrowser` Provider 使用 Playwright 打开隔离的、持久化的 Chrome Profile。先为需要的 Profile 登录一次：
+
+```powershell
+python -m gateway.browser_login --profile default
+```
+
+在打开的 Chrome 窗口完成 ChatGPT 登录后，回到终端按 Enter 保存 Cookie。随后启动网关：
+
+```powershell
+python -m uvicorn gateway.main:app --host 0.0.0.0 --port 9900
+```
+
+创建 Session 可让长期对话、浏览器 Profile 和 Memory 相互隔离：
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9900/api/sessions -ContentType application/json -Body '{"session_id":"investing","profile_name":"default","conversation_url":"https://chatgpt.com/c/<conversation-id>"}'
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9900/api/sessions/investing/memory -ContentType application/json -Body '{"content":"风险偏好保守，优先关注长期价值。"}'
+```
+
+不填 `conversation_url` 时，Provider 会从 ChatGPT 首页开始一个新对话，并在任务完成后保存生成的对话地址到该 Session。
+
+设置 `GATEWAY_API_KEY` 后，所有 `/api/*` 请求都必须带 `X-API-Key` 请求头。测试控制台运行在同一主机时可继续使用；如向局域网开放，请在反向代理层额外配置认证。
+
 创建任务：
 
 ```powershell
@@ -28,9 +53,9 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9900/api/chat -ContentType 
 Invoke-RestMethod http://127.0.0.1:9900/api/tasks/<task_id>
 ```
 
-## OpenBrowser 驱动协议
+## 自定义浏览器驱动协议
 
-当 `GATEWAY_PROVIDER=openbrowser` 时，配置 `GATEWAY_OPENBROWSER_COMMAND`。网关将一行 JSON 通过标准输入传给该命令：
+当 `GATEWAY_PROVIDER=command` 时，配置 `GATEWAY_OPENBROWSER_COMMAND`。网关将一行 JSON 通过标准输入传给该命令：
 
 ```json
 {"task_id":"...","session_id":"general","prompt":"...","timeout_seconds":300}

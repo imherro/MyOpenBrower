@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
 
 from gateway.config import Settings
 from gateway.db import TaskRepository
-from gateway.models import ChatRequest, CreateTaskResponse, TaskResponse
+from gateway.models import (ChatRequest, CreateTaskResponse, MemoryCreateRequest, MemoryResponse,
+                            SessionCreateRequest, SessionResponse, SessionUpdateRequest, TaskResponse)
 from gateway.providers import build_provider
 from gateway.worker import Worker
 
@@ -21,6 +23,18 @@ def _task_response(task: dict) -> TaskResponse:
     )
 
 
+def _session_response(session: dict) -> SessionResponse:
+    return SessionResponse(
+        session_id=session["session_id"], conversation_url=session["conversation_url"],
+        profile_name=session["profile_name"], enabled=bool(session["enabled"]),
+        created_at=session["created_at"], updated_at=session["updated_at"],
+    )
+
+
+def _memory_response(memory: dict) -> MemoryResponse:
+    return MemoryResponse(id=memory["id"], session_id=memory["session_id"], content=memory["content"], created_at=memory["created_at"])
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved = settings or Settings.from_env()
     repository = TaskRepository(resolved.db_path)
@@ -31,7 +45,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         worker_task: asyncio.Task | None = None
         worker: Worker | None = None
         if resolved.worker_enabled:
-            worker = Worker(repository, build_provider(resolved.provider, resolved.openbrowser_command), resolved)
+            worker = Worker(repository, build_provider(
+                resolved.provider, resolved.openbrowser_command, base_url=resolved.chatgpt_base_url,
+                profiles_dir=resolved.browser_profiles_dir, headless=resolved.browser_headless,
+                executable=resolved.browser_executable,
+            ), resolved)
             worker_task = asyncio.create_task(worker.run(), name="chat-gateway-worker")
         app.state.repository = repository
         yield
@@ -41,6 +59,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await worker_task
 
     app = FastAPI(title="ChatGPT Web API Gateway", version="0.1.0", lifespan=lifespan)
+
+    async def require_api_key(x_api_key: Annotated[str | None, Header()] = None) -> None:
+        if resolved.api_key and x_api_key != resolved.api_key:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or missing X-API-Key")
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     async def test_console() -> str:
@@ -54,21 +76,61 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def ready() -> dict[str, object]:
         return {"status": "ok", "provider": resolved.provider, "worker_enabled": resolved.worker_enabled}
 
-    @app.post("/api/chat", response_model=CreateTaskResponse, status_code=status.HTTP_202_ACCEPTED)
+    @app.post("/api/chat", response_model=CreateTaskResponse, status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(require_api_key)])
     async def create_task(body: ChatRequest, request: Request) -> CreateTaskResponse:
         task = repository.create_task(body.session_id, body.prompt, body.timeout_seconds or resolved.task_timeout_seconds)
         return CreateTaskResponse(task_id=task["task_id"], status=task["status"], status_url=str(request.url_for("get_task", task_id=task["task_id"])))
 
-    @app.get("/api/tasks", response_model=list[TaskResponse])
+    @app.get("/api/tasks", response_model=list[TaskResponse], dependencies=[Depends(require_api_key)])
     async def list_tasks() -> list[TaskResponse]:
         return [_task_response(task) for task in repository.list_tasks()]
 
-    @app.get("/api/tasks/{task_id}", response_model=TaskResponse, name="get_task")
+    @app.get("/api/tasks/{task_id}", response_model=TaskResponse, name="get_task", dependencies=[Depends(require_api_key)])
     async def get_task(task_id: str) -> TaskResponse:
         task = repository.get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
         return _task_response(task)
+
+    @app.get("/api/sessions", response_model=list[SessionResponse], dependencies=[Depends(require_api_key)])
+    async def list_sessions() -> list[SessionResponse]:
+        return [_session_response(item) for item in repository.list_sessions()]
+
+    @app.post("/api/sessions", response_model=SessionResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_api_key)])
+    async def create_session(body: SessionCreateRequest) -> SessionResponse:
+        if repository.get_session(body.session_id):
+            raise HTTPException(status_code=409, detail="Session already exists")
+        return _session_response(repository.create_session(body.session_id, body.conversation_url, body.profile_name))
+
+    @app.patch("/api/sessions/{session_id}", response_model=SessionResponse, dependencies=[Depends(require_api_key)])
+    async def update_session(session_id: str, body: SessionUpdateRequest) -> SessionResponse:
+        if body.conversation_url is None and body.profile_name is None and body.enabled is None:
+            raise HTTPException(status_code=422, detail="At least one field is required")
+        updated = repository.update_session(
+            session_id, conversation_url=body.conversation_url, profile_name=body.profile_name, enabled=body.enabled,
+            update_conversation="conversation_url" in body.model_fields_set,
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return _session_response(updated)
+
+    @app.get("/api/sessions/{session_id}/memory", response_model=list[MemoryResponse], dependencies=[Depends(require_api_key)])
+    async def list_memory(session_id: str) -> list[MemoryResponse]:
+        if not repository.get_session(session_id):
+            raise HTTPException(status_code=404, detail="Session not found")
+        return [_memory_response(item) for item in repository.list_memory(session_id)]
+
+    @app.post("/api/sessions/{session_id}/memory", response_model=MemoryResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_api_key)])
+    async def add_memory(session_id: str, body: MemoryCreateRequest) -> MemoryResponse:
+        try:
+            return _memory_response(repository.add_memory(session_id, body.content))
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Session not found") from None
+
+    @app.delete("/api/sessions/{session_id}/memory/{memory_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_api_key)])
+    async def delete_memory(session_id: str, memory_id: int) -> None:
+        if not repository.delete_memory(session_id, memory_id):
+            raise HTTPException(status_code=404, detail="Memory item not found")
 
     return app
 

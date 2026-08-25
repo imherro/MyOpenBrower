@@ -38,3 +38,35 @@ class CreateTaskResponse(BaseModel):
     task_id: str
     status: TaskStatus
     status_url: str
+
+
+class SessionCreateRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    conversation_url: str | None = Field(default=None, max_length=2048)
+    profile_name: str = Field(default="default", min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+class SessionUpdateRequest(BaseModel):
+    conversation_url: str | None = Field(default=None, max_length=2048)
+    profile_name: str | None = Field(default=None, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    enabled: bool | None = None
+
+
+class SessionResponse(BaseModel):
+    session_id: str
+    conversation_url: str | None
+    profile_name: str
+    enabled: bool
+    created_at: str
+    updated_at: str
+
+
+class MemoryCreateRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=20_000)
+
+
+class MemoryResponse(BaseModel):
+    id: int
+    session_id: str
+    content: str
+    created_at: str
