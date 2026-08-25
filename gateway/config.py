@@ -30,6 +30,7 @@ class Settings:
     browser_executable: Path | None = None
     api_key: str | None = None
     log_dir: Path = Path("logs")
+    failure_dir: Path = Path("data/failures")
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -50,4 +51,5 @@ class Settings:
             browser_executable=Path(os.environ["GATEWAY_BROWSER_EXECUTABLE"]) if os.getenv("GATEWAY_BROWSER_EXECUTABLE") else None,
             api_key=os.getenv("GATEWAY_API_KEY") or None,
             log_dir=Path(os.getenv("GATEWAY_LOG_DIR", "logs")),
+            failure_dir=Path(os.getenv("GATEWAY_FAILURE_DIR", "data/failures")),
         )

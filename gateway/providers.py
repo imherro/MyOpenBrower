@@ -87,11 +87,13 @@ class CommandProvider:
 class OpenBrowserProvider:
     """Persistent Chrome-profile adapter implemented with Playwright browser automation."""
 
-    def __init__(self, base_url: str, profiles_dir: Path, headless: bool, executable: Path | None) -> None:
+    def __init__(self, base_url: str, profiles_dir: Path, headless: bool, executable: Path | None,
+                 failure_dir: Path) -> None:
         self.base_url = base_url
         self.profiles_dir = profiles_dir
         self.headless = headless
         self.executable = executable
+        self.failure_dir = failure_dir
 
     async def ask(self, request: ProviderRequest) -> ProviderResult:
         profile_dir = self.profiles_dir / request.profile_name
@@ -100,6 +102,7 @@ class OpenBrowserProvider:
         composed_prompt = request.prompt
         if request.memory_context:
             composed_prompt = f"以下是本次会话的长期背景记忆，请在回答时参考：\n{request.memory_context}\n\n用户问题：\n{request.prompt}"
+        page = None
         try:
             async with async_playwright() as playwright:
                 kwargs: dict = {"headless": self.headless}
@@ -121,12 +124,33 @@ class OpenBrowserProvider:
                     await send_button.click()
                     answer = await self._wait_for_answer(page, before_count, request.timeout_seconds)
                     return ProviderResult(answer=answer, conversation_url=page.url)
+                except ProviderError as exc:
+                    evidence = await self._save_failure_evidence(page, request.task_id)
+                    message = f"{exc} Evidence: {evidence}" if evidence else str(exc)
+                    raise ProviderError(exc.code, message, exc.retryable) from exc
+                except PlaywrightError as exc:
+                    evidence = await self._save_failure_evidence(page, request.task_id)
+                    message = str(exc)[:2000]
+                    if evidence:
+                        message = f"{message} Evidence: {evidence}"
+                    raise ProviderError("PAGE_LOAD_FAILED", message, retryable=True) from exc
                 finally:
                     await context.close()
         except ProviderError:
             raise
         except PlaywrightError as exc:
-            raise ProviderError("PAGE_LOAD_FAILED", str(exc)[:2000], retryable=True) from exc
+            raise ProviderError("BROWSER_LAUNCH_FAILED", str(exc)[:2000], retryable=True) from exc
+
+    async def _save_failure_evidence(self, page, task_id: str) -> str | None:
+        if page is None or page.is_closed():
+            return None
+        try:
+            self.failure_dir.mkdir(parents=True, exist_ok=True)
+            path = self.failure_dir / f"{task_id}.png"
+            await page.screenshot(path=str(path), full_page=True)
+            return str(path)
+        except PlaywrightError:
+            return None
 
     async def _ensure_authenticated(self, page) -> None:
         prompt = page.locator('#prompt-textarea, [contenteditable="true"][role="textbox"]').first
@@ -168,11 +192,11 @@ class OpenBrowserProvider:
 
 
 def build_provider(name: str, command: str | None, *, base_url: str, profiles_dir: Path,
-                   headless: bool, executable: Path | None) -> ChatProvider:
+                   headless: bool, executable: Path | None, failure_dir: Path) -> ChatProvider:
     if name == "demo":
         return DemoProvider()
     if name == "openbrowser":
-        return OpenBrowserProvider(base_url, profiles_dir, headless, executable)
+        return OpenBrowserProvider(base_url, profiles_dir, headless, executable, failure_dir)
     if name == "command":
         return CommandProvider(command)
     raise ValueError(f"Unsupported provider: {name}")

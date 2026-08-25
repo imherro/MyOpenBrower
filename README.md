@@ -43,6 +43,8 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9900/api/sessions/investing
 
 任务控制接口：`POST /api/tasks/{task_id}/cancel` 可取消尚未由浏览器领取的任务；`POST /api/tasks/{task_id}/retry` 可重新排队失败或已取消的任务。运行日志写入 `logs/gateway.log`，单文件最大 5 MB，最多保留 5 个备份。
 
+浏览器页面或生成失败时，Provider 会将页面截图保存到 `data/failures/<task_id>.png`，对应路径会写入任务错误信息，便于排查页面变化或登录问题。
+
 创建任务：
 
 ```powershell

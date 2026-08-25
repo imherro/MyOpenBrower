@@ -48,7 +48,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             worker = Worker(repository, build_provider(
                 resolved.provider, resolved.openbrowser_command, base_url=resolved.chatgpt_base_url,
                 profiles_dir=resolved.browser_profiles_dir, headless=resolved.browser_headless,
-                executable=resolved.browser_executable,
+                executable=resolved.browser_executable, failure_dir=resolved.failure_dir,
             ), resolved)
             worker_task = asyncio.create_task(worker.run(), name="chat-gateway-worker")
         app.state.repository = repository

@@ -547,6 +547,7 @@ Memory 条目按 Session 保存。Worker 执行任务时将它们组合为背景
 -   运行日志写入 `logs/gateway.log`，单文件上限 5 MB，保留 5 个轮转备份。
 -   数据库采用 SQLite WAL 与原子任务领取；Worker 启动时会恢复心跳超时的 `running` 任务。
 -   Provider 将登录失效标记为 `AUTH_REQUIRED`；页面与生成超时会按照退避策略重试。
+-   Provider 在页面或生成异常时保存 `data/failures/<task_id>.png` 页面截图，并将路径追加到任务错误信息，作为故障证据。
 
 ## 15.4 启动与验收
 
