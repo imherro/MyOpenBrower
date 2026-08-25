@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
+import logging
 from uuid import uuid4
 
 from gateway.config import Settings
@@ -16,6 +17,7 @@ class Worker:
         self.settings = settings
         self.worker_id = f"worker-{uuid4().hex[:8]}"
         self._stopping = asyncio.Event()
+        self.logger = logging.getLogger("gateway.worker")
 
     def stop(self) -> None:
         self._stopping.set()
@@ -28,6 +30,7 @@ class Worker:
                 with suppress(TimeoutError):
                     await asyncio.wait_for(self._stopping.wait(), timeout=self.settings.poll_interval_seconds)
                 continue
+            self.logger.info("task_claimed task_id=%s session_id=%s attempt=%s", task["task_id"], task["session_id"], task["attempt_count"])
             await self._execute(task)
 
     async def _execute(self, task: dict) -> None:
@@ -47,14 +50,17 @@ class Worker:
             self.repository.complete(task["task_id"], result.answer)
             if result.conversation_url:
                 self.repository.update_session(task["session_id"], conversation_url=result.conversation_url, update_conversation=True)
+            self.logger.info("task_completed task_id=%s", task["task_id"])
         except ProviderError as exc:
             if exc.code == "AUTH_REQUIRED":
                 self.repository.mark_auth_required(task["task_id"], str(exc))
             else:
                 retry_after = min(5 * (3 ** (task["attempt_count"] - 1)), 60) if exc.retryable else None
                 self.repository.fail(task["task_id"], exc.code, str(exc), retry_after)
+            self.logger.warning("task_provider_error task_id=%s code=%s retryable=%s", task["task_id"], exc.code, exc.retryable)
         except Exception as exc:
             self.repository.fail(task["task_id"], "INTERNAL_ERROR", str(exc)[:2000], retry_after_seconds=5)
+            self.logger.exception("task_internal_error task_id=%s", task["task_id"])
         finally:
             heartbeat.cancel()
             with suppress(asyncio.CancelledError):

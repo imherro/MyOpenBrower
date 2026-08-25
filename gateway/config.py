@@ -27,6 +27,7 @@ class Settings:
     browser_headless: bool = False
     browser_executable: Path | None = None
     api_key: str | None = None
+    log_dir: Path = Path("logs")
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -45,4 +46,5 @@ class Settings:
             browser_headless=_as_bool(os.getenv("GATEWAY_BROWSER_HEADLESS"), False),
             browser_executable=Path(os.environ["GATEWAY_BROWSER_EXECUTABLE"]) if os.getenv("GATEWAY_BROWSER_EXECUTABLE") else None,
             api_key=os.getenv("GATEWAY_API_KEY") or None,
+            log_dir=Path(os.getenv("GATEWAY_LOG_DIR", "logs")),
         )

@@ -41,6 +41,8 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9900/api/sessions/investing
 
 设置 `GATEWAY_API_KEY` 后，所有 `/api/*` 请求都必须带 `X-API-Key` 请求头。测试控制台运行在同一主机时可继续使用；如向局域网开放，请在反向代理层额外配置认证。
 
+任务控制接口：`POST /api/tasks/{task_id}/cancel` 可取消尚未由浏览器领取的任务；`POST /api/tasks/{task_id}/retry` 可重新排队失败或已取消的任务。运行日志写入 `logs/gateway.log`，单文件最大 5 MB，最多保留 5 个备份。
+
 创建任务：
 
 ```powershell

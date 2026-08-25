@@ -50,6 +50,18 @@ def test_api_key_is_enforced_when_configured(tmp_path):
         assert client.get("/api/tasks", headers={"X-API-Key": "test-key"}).status_code == 200
 
 
+def test_cancel_and_retry_task(tmp_path):
+    app = create_app(Settings(db_path=tmp_path / "gateway.db", worker_enabled=False))
+    with TestClient(app) as client:
+        task_id = client.post("/api/chat", json={"session_id": "general", "prompt": "hello"}).json()["task_id"]
+        cancelled = client.post(f"/api/tasks/{task_id}/cancel")
+        assert cancelled.status_code == 200
+        assert cancelled.json()["status"] == "cancelled"
+        retried = client.post(f"/api/tasks/{task_id}/retry")
+        assert retried.status_code == 200
+        assert retried.json()["status"] == "pending"
+
+
 def test_invalid_session_is_rejected(tmp_path):
     app = create_app(Settings(db_path=tmp_path / "gateway.db", worker_enabled=False))
     with TestClient(app) as client:

@@ -92,6 +92,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Task not found")
         return _task_response(task)
 
+    @app.post("/api/tasks/{task_id}/cancel", response_model=TaskResponse, dependencies=[Depends(require_api_key)])
+    async def cancel_task(task_id: str) -> TaskResponse:
+        task = repository.cancel_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        if task["status"] not in {"cancelled"}:
+            raise HTTPException(status_code=409, detail="Only pending or retry-wait tasks can be cancelled")
+        return _task_response(task)
+
+    @app.post("/api/tasks/{task_id}/retry", response_model=TaskResponse, dependencies=[Depends(require_api_key)])
+    async def retry_task(task_id: str) -> TaskResponse:
+        task = repository.retry_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        if task["status"] not in {"pending", "retry_wait"}:
+            raise HTTPException(status_code=409, detail="Only failed or cancelled tasks can be retried")
+        return _task_response(task)
+
     @app.get("/api/sessions", response_model=list[SessionResponse], dependencies=[Depends(require_api_key)])
     async def list_sessions() -> list[SessionResponse]:
         return [_session_response(item) for item in repository.list_sessions()]
@@ -177,7 +195,7 @@ TEST_CONSOLE_HTML = """<!doctype html>
       <textarea id="prompt" name="prompt" placeholder="输入测试问题…" required aria-label="问题"></textarea>
       <button type="submit">提交问题</button>
     </form>
-    <div class="toolbar"><span id="message"></span><button id="refresh" type="button">立即刷新</button></div>
+    <div class="toolbar"><input id="api-key" type="password" placeholder="可选：X-API-Key" aria-label="API Key"><span id="message"></span><button id="refresh" type="button">立即刷新</button></div>
     <div class="table-wrap">
       <table>
         <thead><tr><th>状态</th><th>会话</th><th>问题</th><th>答案 / 错误</th><th>尝试</th><th>创建时间</th><th>完成时间</th><th>任务 ID</th></tr></thead>
@@ -194,10 +212,13 @@ TEST_CONSOLE_HTML = """<!doctype html>
       element.textContent = value ?? '—';
       row.appendChild(element);
     }
+    const apiKey = document.getElementById('api-key'); apiKey.value = localStorage.getItem('gateway_api_key') || '';
+    apiKey.addEventListener('change', () => localStorage.setItem('gateway_api_key', apiKey.value));
+    function headers() { return apiKey.value ? {'X-API-Key': apiKey.value} : {}; }
     function displayTime(value) { return value ? new Date(value).toLocaleString() : '—'; }
     async function loadTasks() {
       try {
-        const response = await fetch('/api/tasks');
+        const response = await fetch('/api/tasks', {headers: headers()});
         if (!response.ok) throw new Error('无法读取任务列表');
         const tasks = await response.json();
         table.replaceChildren();
@@ -218,7 +239,7 @@ TEST_CONSOLE_HTML = """<!doctype html>
     }
     document.getElementById('chat-form').addEventListener('submit', async (event) => {
       event.preventDefault(); message.textContent = '正在创建任务…';
-      const response = await fetch('/api/chat', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({session_id: document.getElementById('session').value, prompt: document.getElementById('prompt').value}) });
+      const response = await fetch('/api/chat', { method: 'POST', headers: {...headers(), 'Content-Type': 'application/json'}, body: JSON.stringify({session_id: document.getElementById('session').value, prompt: document.getElementById('prompt').value}) });
       const result = await response.json();
       if (!response.ok) { message.textContent = result.detail ? JSON.stringify(result.detail) : '创建失败'; return; }
       message.textContent = `任务已创建：${result.task_id}`; document.getElementById('prompt').value = ''; loadTasks();

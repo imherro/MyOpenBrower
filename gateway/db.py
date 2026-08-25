@@ -195,6 +195,25 @@ class TaskRepository:
                 (TaskStatus.COMPLETED.value, answer, now, now, task_id, TaskStatus.RUNNING.value),
             )
 
+    def cancel_task(self, task_id: str) -> dict | None:
+        with self._connection() as con:
+            con.execute(
+                """UPDATE tasks SET status = ?, completed_at = ?, error_code = ?, error_message = ?
+                   WHERE task_id = ? AND status IN (?, ?)""",
+                (TaskStatus.CANCELLED.value, utcnow(), "CANCELLED", "Cancelled before browser execution.", task_id,
+                 TaskStatus.PENDING.value, TaskStatus.RETRY_WAIT.value),
+            )
+        return self.get_task(task_id)
+
+    def retry_task(self, task_id: str) -> dict | None:
+        with self._connection() as con:
+            con.execute(
+                """UPDATE tasks SET status = ?, available_at = ?, completed_at = NULL,
+                   error_code = NULL, error_message = NULL WHERE task_id = ? AND status IN (?, ?)""",
+                (TaskStatus.PENDING.value, utcnow(), task_id, TaskStatus.FAILED.value, TaskStatus.CANCELLED.value),
+            )
+        return self.get_task(task_id)
+
     def fail(self, task_id: str, error_code: str, error_message: str, retry_after_seconds: int | None = None) -> None:
         now = datetime.now(UTC)
         with self._connection() as con:
